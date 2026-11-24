@@ -1,0 +1,56 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: storefront
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels: {app: storefront}
+  template:
+    metadata:
+      labels: {app: storefront}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: app
+          image: ghcr.io/dhinesh181999/storefront          # tag is set per environment in overlays/*/kustomization.yaml
+          ports: [{name: http, containerPort: 8080}]
+          env:                  # NOTE: overlays patch these by index (0=APP_ENV, 1=ERROR_RATE)
+            - {name: APP_ENV, value: base}
+            - {name: ERROR_RATE, value: "0"}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: secrets, mountPath: /etc/storefront/secrets, readOnly: true}
+      volumes:
+        - name: secrets            # directory mount (no subPath) => kubelet refreshes it on rotation
+          secret:
+            secretName: storefront-secrets
+            optional: true
+  strategy:
+    canary:
+      stableService: storefront-stable
+      canaryService: storefront-canary
+      trafficRouting:
+        nginx:
+          stableIngress: storefront
+      steps:                       # overridden per environment
+        - setWeight: 100

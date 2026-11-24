@@ -1,0 +1,5 @@
+# Local-only secret material: NEVER commit
+.secrets/
+*.secret.yaml
+*.key
+*.bak

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata: {name: storefront-stable}
+spec:
+  selector: {app: storefront}
+  ports: [{name: http, port: 80, targetPort: http}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: storefront-canary}
+spec:
+  selector: {app: storefront}
+  ports: [{name: http, port: 80, targetPort: http}]

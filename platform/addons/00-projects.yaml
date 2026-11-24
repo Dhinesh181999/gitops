@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations: {argocd.argoproj.io/sync-wave: "-1"}
+spec:
+  description: Cluster-wide components (admin-owned)
+  sourceRepos: ["*"]
+  destinations: [{server: https://kubernetes.default.svc, namespace: "*"}]
+  clusterResourceWhitelist: [{group: "*", kind: "*"}]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: shop
+  namespace: argocd
+  annotations: {argocd.argoproj.io/sync-wave: "-1"}
+spec:
+  description: Microservice runtime. Namespaced resources in shop-* namespaces only
+  sourceRepos: [https://github.com/Dhinesh181999/gitops.git]
+  destinations: [{server: https://kubernetes.default.svc, namespace: "shop-*"}]
+  clusterResourceWhitelist: [{group: "", kind: Namespace}]
