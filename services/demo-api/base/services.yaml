@@ -1,13 +1,15 @@
 apiVersion: v1
 kind: Service
-metadata: {name: storefront-stable}
+metadata:
+  name: demo-api-stable
 spec:
-  selector: {app: storefront}
+  selector: {app: demo-api}
   ports: [{name: http, port: 80, targetPort: http}]
 ---
 apiVersion: v1
 kind: Service
-metadata: {name: storefront-canary}
+metadata:
+  name: demo-api-canary
 spec:
-  selector: {app: storefront}
+  selector: {app: demo-api}
   ports: [{name: http, port: 80, targetPort: http}]

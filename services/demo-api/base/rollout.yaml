@@ -1,15 +1,15 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
-  name: storefront
+  name: demo-api
 spec:
   replicas: 1
   revisionHistoryLimit: 3
   selector:
-    matchLabels: {app: storefront}
+    matchLabels: {app: demo-api}
   template:
     metadata:
-      labels: {app: storefront}
+      labels: {app: demo-api}
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -18,9 +18,9 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: app
-          image: ghcr.io/dhinesh181999/storefront          # tag is set per environment in overlays/*/kustomization.yaml
+          image: ghcr.io/dhinesh181999/demo-api
           ports: [{name: http, containerPort: 8080}]
-          env:                  # NOTE: overlays patch these by index (0=APP_ENV, 1=ERROR_RATE)
+          env:
             - {name: APP_ENV, value: base}
             - {name: ERROR_RATE, value: "0"}
           readinessProbe:
@@ -39,18 +39,18 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
-            - {name: secrets, mountPath: /etc/storefront/secrets, readOnly: true}
+            - {name: secrets, mountPath: /etc/demo-api/secrets, readOnly: true}
       volumes:
-        - name: secrets            # directory mount (no subPath) => kubelet refreshes it on rotation
+        - name: secrets
           secret:
-            secretName: storefront-secrets
+            secretName: demo-api-secrets
             optional: true
   strategy:
     canary:
-      stableService: storefront-stable
-      canaryService: storefront-canary
+      stableService: demo-api-stable
+      canaryService: demo-api-canary
       trafficRouting:
         nginx:
-          stableIngress: storefront
-      steps:                       # overridden per environment
+          stableIngress: demo-api
+      steps:
         - setWeight: 100

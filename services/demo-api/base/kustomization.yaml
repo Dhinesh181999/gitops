@@ -4,5 +4,5 @@ resources:
   - rollout.yaml
   - services.yaml
   - ingress.yaml
-  - analysis-template.yaml
   - networkpolicies.yaml
+  - analysis-template.yaml

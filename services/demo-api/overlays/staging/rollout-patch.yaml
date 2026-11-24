@@ -1,0 +1,19 @@
+- {op: replace, path: /spec/replicas, value: 2}
+- {op: replace, path: /spec/template/spec/containers/0/env/0/value, value: staging}
+- {op: replace, path: /spec/template/spec/containers/0/env/1/value, value: "0"}
+- op: add
+  path: /spec/strategy/canary/analysis
+  value:
+    startingStep: 1
+    templates: [{templateName: demo-api-error-rate}]
+    args:
+      - {name: canary-service, value: demo-api-canary}
+      - {name: namespace, value: demo-staging}
+- op: replace
+  path: /spec/strategy/canary/steps
+  value:
+    - setWeight: 20
+    - pause: {duration: 20s}
+    - setWeight: 50
+    - pause: {duration: 20s}
+    - setWeight: 100

@@ -1,8 +1,7 @@
-# One Application per overlay folder under services/storefront/overlays.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: storefront
+  name: demo-api
   namespace: argocd
   annotations: {argocd.argoproj.io/sync-wave: "2"}
 spec:
@@ -13,25 +12,24 @@ spec:
         repoURL: https://github.com/Dhinesh181999/gitops.git
         revision: main
         directories:
-          - path: services/storefront/overlays/*
+          - path: services/demo-api/overlays/*
   template:
     metadata:
-      name: 'shop-{{.path.basename}}'
+      name: 'demo-api-{{.path.basename}}'
     spec:
-      project: shop
+      project: demo-api
       source:
         repoURL: https://github.com/Dhinesh181999/gitops.git
         targetRevision: main
         path: '{{.path.path}}'
       destination:
         server: https://kubernetes.default.svc
-        namespace: 'shop-{{.path.basename}}'
+        namespace: 'demo-{{.path.basename}}'
       syncPolicy:
-        automated: {prune: true, selfHeal: true}   # selfHeal = drift reconciliation
+        automated: {prune: true, selfHeal: true}
         syncOptions: [CreateNamespace=true, RespectIgnoreDifferences=true]
         retry: {limit: 10, backoff: {duration: 15s, factor: 2, maxDuration: 3m}}
       ignoreDifferences:
-        # Argo Rollouts injects rollouts-pod-template-hash into Service selectors at runtime
         - group: ""
           kind: Service
           jsonPointers: [/spec/selector]

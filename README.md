@@ -1,93 +1,119 @@
-# Shop Delivery Platform
+# GitOps Progressive Delivery Platform
 
-GitOps delivery setup for a small sample service ("storefront") on a local Kubernetes cluster.
-Argo CD keeps the cluster in sync with this repo, Argo Rollouts does canary releases, secrets are
-stored encrypted with Sealed Secrets, and Prometheus metrics can stop a bad release automatically.
+This repository demonstrates a local Kubernetes delivery platform for a lightweight `demo-api`
+service. kind creates the cluster, Argo CD reconciles platform and application state from Git,
+Sealed Secrets encrypts demo credentials, and Argo Rollouts performs canary releases. GitHub
+Actions builds images only; changing a Git-managed image tag is what deploys a release.
 
-## How it works
+## Architecture
 
 ```mermaid
 flowchart LR
-  dev[Developer] -- push --> GH[(GitHub)]
-  GH -- app/ changes --> CI[GitHub Actions: build image]
-  CI --> REG[(ghcr.io)]
-  subgraph Cluster [kind cluster]
-    ARGO[Argo CD] -- watches --> GH
-    ARGO --> ADD[Add-ons: ingress-nginx, Sealed Secrets, Rollouts, Prometheus]
-    ARGO --> ENV[shop-dev / shop-staging / shop-prod]
-    ADD -. traffic split .-> ENV
-    ADD -. error rate .-> ADD
-  end
+  DEV[Developer] -->|app change or version tag| GH[GitHub]
+  GH -->|build only| CI[GitHub Actions]
+  CI --> REG[GHCR]
+  ARGO[Argo CD] -->|sync and self-heal| GH
+  ARGO --> CORE[Platform add-ons]
+  ARGO --> ENV[demo-dev / demo-staging / demo-prod]
+  ENV --> ROLLOUT[Argo Rollouts]
+  ROLLOUT --> INGRESS[ingress-nginx]
+  INGRESS --> APP[demo-api]
+  PROM[Prometheus] -->|5xx analysis| ROLLOUT
 ```
-
-1. CI only builds and pushes an image. It never deploys.
-2. A release is a commit that changes `newTag` in `services/storefront/overlays/<env>/kustomization.yaml`.
-3. Argo CD applies it. Argo Rollouts moves traffic to the new version in steps (10, 30, 60, 100 percent in prod).
-4. While that happens, Prometheus checks the canary's 5xx rate. If it is too high, the rollout aborts
-   and traffic goes back to the stable version. You then revert the commit so Git matches the cluster.
 
 ## Repository layout
 
-```
-bootstrap.sh                    cluster + Argo CD + root app (only manual step)
-kind/                           cluster configs (default, and one with Calico for network policies)
-app/                            Python sample service and Dockerfile
-.github/workflows/build.yaml    image build and push
-platform/root-app.yaml          entry point Argo CD starts from
-platform/addons/                projects, cluster add-ons (Helm, pinned), per-environment ApplicationSet
-services/storefront/base/       rollout, services, ingress, analysis template, network policies
-services/storefront/overlays/   dev, staging, prod (replicas, canary steps, image tag, host, sealed secret)
-scripts/                        helper scripts
+```text
+bootstrap.sh                     kind cluster and Argo CD bootstrap
+kind/                            Default and Calico-enabled kind configurations
+app/                             Python demo service and container image
+.github/workflows/build.yaml     Build and publish image; no cluster deployment
+platform/root-app.yaml           Argo CD app-of-apps entry point
+platform/addons/                 Projects, controllers, monitoring, environment ApplicationSet
+services/demo-api/base/          Rollout, services, ingress, analysis, network policies
+services/demo-api/overlays/       Kustomize settings for dev, staging, and prod
+scripts/                         Sealed-secret generation, promotion, traffic, cleanup
 ```
 
-Environments are folders, not branches. Adding `overlays/qa/` creates a `shop-qa` namespace automatically.
+Environments are directories rather than long-lived Git branches. The ApplicationSet creates
+one Argo CD Application for each directory under `services/demo-api/overlays/`.
 
 ## Requirements
 
-Docker, kind, kubectl, git, openssl, kubeseal, yq. Optional: argocd CLI, kubectl-argo-rollouts.
-About 4 CPUs, 8 GB RAM and 20 GB disk. A public GitHub repo.
+Docker, kind, kubectl, git, openssl, kubeseal, and Mike Farah `yq` v4. Run shell scripts from WSL
+or Git Bash on Windows. The local cluster needs about 4 CPUs, 8 GB RAM, and 20 GB disk.
 
-## Setup
+## Bootstrap
 
-This checkout is configured for https://github.com/Dhinesh181999/gitops.git.
-Connect it as `origin` if needed, then commit and push the files to the `main` branch.
+1. Push this repository to the `main` branch on GitHub.
+2. In GitHub Actions, confirm the `build-demo-api` workflow succeeds. Publish the
+   `ghcr.io/dhinesh181999/demo-api` package as public so the local cluster can pull it.
+3. Publish the initial image tag:
+
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+4. From the repository root, create the local cluster and bootstrap Argo CD:
+
+   ```bash
+   ./bootstrap.sh
+   ```
+
+   If NetworkPolicies must be enforced locally, use the Calico cluster configuration:
+
+   ```bash
+   NETPOL_CNI=calico ./bootstrap.sh
+   ```
+
+5. Once bootstrap has created `.secrets/sealed-secrets.crt`, generate encrypted demo secrets and
+   push the resulting ciphertext and Kustomize changes:
+
+   ```bash
+   ./scripts/seal.sh
+   git add services/demo-api/overlays
+   git commit -m "Add encrypted demo secrets"
+   git push
+   ```
+
+   The app can start before this step because the secret mount is optional. Only encrypted
+   `SealedSecret` data is written to Git. Keep `.secrets/` private and backed up; losing the
+   private key prevents decryption after a cluster rebuild.
+
+Watch the Argo CD applications:
 
 ```bash
-git tag v1.0.0 && git push origin v1.0.0                # CI builds the image; make the package public
-                                                        # (or: ./scripts/local-image.sh v1.0.0 <github-user>)
-
-./bootstrap.sh                                          # NETPOL_CNI=calico ./bootstrap.sh if policies aren't enforced
-./scripts/seal.sh                                       # encrypt secrets for all environments
-git add -A && git commit -m "add sealed secrets" && git push
+kubectl -n argocd get applications -w
 ```
 
-Then open http://shop-prod.localtest.me (`localtest.me` resolves to 127.0.0.1).
+Visit `http://demo-dev.localtest.me`, `http://demo-staging.localtest.me`, or
+`http://demo-prod.localtest.me` after the applications become healthy.
 
-## Demo steps
+## Release and demonstration
 
-| What | How | Result |
+| Demo | Git-driven action | Expected result |
 |---|---|---|
-| Traffic | `./scripts/traffic.sh prod` | steady requests for the metrics |
-| New version | change `newTag` to `v2.0.0` in the prod overlay and push | `kubectl argo rollouts get rollout storefront -n shop-prod -w` |
-| Secret rotation | `PAYMENT_API_KEY_PROD=newvalue ./scripts/seal.sh prod`, push | `secret_fingerprint` in the response changes, no restart |
-| Drift | `kubectl scale rollout storefront -n shop-prod --replicas=7` | Argo CD marks OutOfSync, then restores 3 |
-| Auto rollback | set `ERROR_RATE` to `"1"` in `prod/rollout-patch.yaml`, push | analysis fails, rollout aborts, then `git revert` |
-| Promotion | `./scripts/promote.sh dev staging` | tag change shows up as a Git diff |
+| Version update | Push an app change or `v*` tag to build an image, then change `newTag` in the dev overlay | Argo CD syncs and Rollouts deploys the new version |
+| Promotion | Run `./scripts/promote.sh dev staging`, review the diff, then commit and push; repeat staging to prod | Environment progression is a Git change |
+| Canary traffic | Run `./scripts/traffic.sh prod` while a prod rollout is in progress | Requests exercise the canary and populate ingress metrics |
+| Secret rotation | Run `./scripts/seal.sh prod`, then commit and push the encrypted manifest | The response fingerprint changes; the app never returns the secret |
+| Drift repair | Run `kubectl scale rollout demo-api -n demo-prod --replicas=7` | Argo CD reports drift and restores the Git-declared replica count of 3 |
+| Automated rollback | Keep `./scripts/traffic.sh prod` running, set `ERROR_RATE` to `"1"` in `services/demo-api/overlays/prod/rollout-patch.yaml`, and push | Prometheus analysis fails the canary and Rollouts restores the stable ReplicaSet; revert the Git change afterward |
 
-## Notes
+The drift command is only a demonstration of self-healing. Normal releases and promotions are
+made through Git, not manual cluster changes.
 
-- Only encrypted `SealedSecret` files are in Git. The key pair is created by `bootstrap.sh` in `.secrets/`
-  (git-ignored) and reused if the cluster is rebuilt. Secrets are scoped to one namespace, so each overlay has its own.
-- The secret is mounted as a folder and read on each request, so rotating it needs no pod restart.
-- Argo CD runs with `selfHeal` and `prune`. Service selectors are ignored in diffs because Argo Rollouts adds a hash label to them.
-- Pods have requests and limits, run as non-root with a read-only filesystem, and each namespace starts with a deny-all network policy.
-- Pinned versions: Argo CD v2.13.3, ingress-nginx 4.11.3, sealed-secrets 2.16.2, argo-rollouts 2.38.0,
-  kube-prometheus-stack 66.2.1. Check for newer ones with `helm search repo <chart> --versions`.
-  ingress-nginx is retired upstream but still works here.
+## Security and operations
 
-## Troubleshooting
-
-- `ImagePullBackOff`: the image package is private or the tag doesn't exist.
-- Analysis never fails: no traffic is reaching the canary, run `traffic.sh`.
-- Apps fail on first sync: CRDs are still installing, the retry settings clear this in a few minutes.
-- Secrets won't decrypt after a rebuild: keep the `.secrets/` folder, or run `seal.sh` again.
+- The demo container runs as a non-root user with a read-only filesystem, dropped capabilities,
+  resource requests and limits, and health probes.
+- Each environment starts with a deny-all NetworkPolicy; ingress is limited to ingress-nginx
+  and egress to cluster DNS. Use Calico locally to enforce these policies.
+- Argo CD applications use automated sync, pruning, and self-healing. Image build automation
+  does not deploy to Kubernetes.
+- Controller and Helm chart versions are pinned in `platform/addons/`. Review upstream releases
+  before changing pins.
+- This is a local assignment/demo topology. For production, use a managed Kubernetes platform,
+  hardened identity/access controls, external secret-key backup, and reviewed ingress/controller
+  versions.

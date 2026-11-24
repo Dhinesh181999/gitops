@@ -48,7 +48,7 @@ if [ ! -f "$SECRETS_DIR/sealed-secrets.key" ]; then
     -keyout "$SECRETS_DIR/sealed-secrets.key" -out "$SECRETS_DIR/sealed-secrets.crt" \
     -subj "/CN=sealed-secrets/O=gitops-platform" 2>/dev/null
   chmod 600 "$SECRETS_DIR/sealed-secrets.key"
-  echo "generated new key pair in $SECRETS_DIR/ (git-ignored). Seal secrets with ./scripts/seal.sh"
+  echo "generated new key pair in $SECRETS_DIR/ (git-ignored)."
 fi
 kubectl -n kube-system create secret tls sealed-secrets-bootstrap-key \
   --cert="$SECRETS_DIR/sealed-secrets.crt" --key="$SECRETS_DIR/sealed-secrets.key" \
@@ -89,7 +89,6 @@ Bootstrap complete. Argo CD is now installing the platform from Git.
   UI:        kubectl -n argocd port-forward svc/argocd-server 8080:443   ->  https://localhost:8080
   login:     admin / ${PASS}
   Rollouts:  kubectl -n argo-rollouts port-forward svc/argo-rollouts-dashboard 3100:3100
-  Apps:      http://shop-dev.localtest.me  http://shop-staging.localtest.me  http://shop-prod.localtest.me
-
+  Apps:      http://demo-dev.localtest.me  http://demo-staging.localtest.me  http://demo-prod.localtest.me
 Platform takes ~5-10 min (Prometheus is the slow one). Watch: kubectl -n argocd get applications -w
 MSG

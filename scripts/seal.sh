@@ -1,29 +1,46 @@
 #!/usr/bin/env bash
-# Seal PAYMENT_API_KEY for each environment using the LOCAL public cert (works offline).
-# Only the encrypted SealedSecret is written into the repo.
-#   ./scripts/seal.sh                 # random token per env
-#   PAYMENT_API_KEY_PROD=newvalue ./scripts/seal.sh prod   # rotate one env
 set -euo pipefail
 cd "$(dirname "$0")/.."
-command -v kubeseal >/dev/null || { echo "install kubeseal first"; exit 1; }
+
 CERT=".secrets/sealed-secrets.crt"
-[ -f "$CERT" ] || { echo "$CERT missing: run ./bootstrap.sh first (it generates the key pair)"; exit 1; }
-ENVS=("${@:-dev staging prod}")
-[ $# -eq 0 ] && ENVS=(dev staging prod)
+[ -f "$CERT" ] || { echo "$CERT missing; run ./bootstrap.sh first" >&2; exit 1; }
+command -v kubeseal >/dev/null || { echo "kubeseal is required" >&2; exit 1; }
+command -v yq >/dev/null || { echo "Mike Farah yq v4 is required" >&2; exit 1; }
+command -v openssl >/dev/null || { echo "openssl is required" >&2; exit 1; }
+
+if [ "$#" -eq 0 ]; then
+  ENVS=(dev staging prod)
+else
+  ENVS=("$@")
+fi
+
 for env in "${ENVS[@]}"; do
-  var="PAYMENT_API_KEY_$(echo "$env" | tr a-z A-Z)"
-  token="${!var:-$(openssl rand -hex 12)}"
-  out="services/storefront/overlays/${env}/sealed-secret.yaml"
-  kubeseal --cert "$CERT" --format yaml <<YAML > "$out"
+  case "$env" in
+    dev|staging|prod) ;;
+    *) echo "unsupported environment: $env" >&2; exit 1 ;;
+  esac
+
+  var="DEMO_API_KEY_$(printf '%s' "$env" | tr '[:lower:]' '[:upper:]')"
+  token="${!var:-$(openssl rand -hex 16)}"
+  encoded="$(printf '%s' "$token" | base64 | tr -d '\n')"
+  overlay="services/demo-api/overlays/${env}"
+  output="${overlay}/sealed-secret.yaml"
+
+  kubeseal --cert "$CERT" --scope strict --format yaml > "$output" <<YAML
 apiVersion: v1
 kind: Secret
 metadata:
-  name: storefront-secrets
-  namespace: shop-${env}
+  name: demo-api-secrets
+  namespace: demo-${env}
 type: Opaque
-stringData:
-  PAYMENT_API_KEY: "${token}"
+data:
+  DEMO_API_KEY: "${encoded}"
 YAML
-  echo "sealed ${env} -> ${out}"
+
+  if ! yq '.resources[]' "${overlay}/kustomization.yaml" | grep -Fxq "sealed-secret.yaml"; then
+    yq -i '.resources += ["sealed-secret.yaml"]' "${overlay}/kustomization.yaml"
+  fi
+  echo "Sealed secret generated for ${env}; only encrypted data is written to the repository."
 done
-echo "Review, then: git add -A && git commit -m 'rotate secrets' && git push"
+
+echo "Review the encrypted manifests, then commit and push them to Git."

@@ -13,11 +13,11 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: shop
+  name: demo-api
   namespace: argocd
   annotations: {argocd.argoproj.io/sync-wave: "-1"}
 spec:
-  description: Microservice runtime. Namespaced resources in shop-* namespaces only
+  description: Demo API workload in isolated demo-* namespaces
   sourceRepos: [https://github.com/Dhinesh181999/gitops.git]
-  destinations: [{server: https://kubernetes.default.svc, namespace: "shop-*"}]
+  destinations: [{server: https://kubernetes.default.svc, namespace: "demo-*"}]
   clusterResourceWhitelist: [{group: "", kind: Namespace}]

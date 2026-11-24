@@ -1,7 +1,6 @@
-# Per-environment knobs for the Rollout (JSON6902).
 - {op: replace, path: /spec/replicas, value: 1}
 - {op: replace, path: /spec/template/spec/containers/0/env/0/value, value: dev}
-- {op: replace, path: /spec/template/spec/containers/0/env/1/value, value: "0"}   # ERROR_RATE
+- {op: replace, path: /spec/template/spec/containers/0/env/1/value, value: "0"}
 - op: replace
   path: /spec/strategy/canary/steps
   value:
